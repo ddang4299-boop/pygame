@@ -1,35 +1,35 @@
-# Flappy Bird với Pygame
+# Flappy Bird with Pygame
 
-Đây là một sản phẩm cá nhân mình làm để học Python và thỏa trí tò mò về cách tạo ra một game đơn giản bằng thư viện [Pygame](https://www.pygame.org/). Ai cần tham khảo thì cứ thoải mái xem qua nhé!
+This is a personal project I made to learn Python and out of curiosity about how a simple game is built with the [Pygame](https://www.pygame.org/) library. If you find it useful, feel free to take a look!
 
-## Tính năng
+## Features
 
-- Chim bay, trọng lực và ống di chuyển liên tục
-- Tính điểm bằng ảnh chữ số
-- Màn hình chờ và màn hình game over
-- Hiệu ứng âm thanh, có nút bật/tắt ở góc trái
+- Bird flight, gravity, and continuously moving pipes
+- Score display using digit images
+- Start screen and game over screen
+- Sound effects, with an on/off button in the top-left corner
 
-## Cách chạy
+## How to run
 
-Cần cài [Python 3](https://www.python.org/downloads/) trước, sau đó chạy các lệnh sau trong thư mục project:
+Install [Python 3](https://www.python.org/downloads/) first, then run these commands in the project folder:
 
 ```bash
 pip install pygame
 python flappybird.py
 ```
 
-Nhớ chạy lệnh từ đúng thư mục chứa `flappybird.py`, vì game tải ảnh và âm thanh theo đường dẫn tương đối.
+Make sure to run the game from the folder containing `flappybird.py`, because images and sounds are loaded using relative paths.
 
-## Cách chơi
+## How to play
 
-| Thao tác | Tác dụng |
+| Action | Result |
 |---|---|
-| Click chuột | Bắt đầu game |
-| Click chuột trái hoặc nhấn Space | Chim bay lên, chơi lại khi game over |
-| Click vào biểu tượng loa | Bật/tắt âm thanh |
+| Click the mouse | Start the game |
+| Left-click or press Space | Make the bird fly up, or restart after game over |
+| Click the speaker icon | Turn sound on or off |
 
-## Nguồn tài nguyên
+## Credits
 
-Phần lớn ảnh và âm thanh lấy từ [flappy-bird-assets](https://github.com/samuelcust/flappy-bird-assets) của Samuel Custodio, theo giấy phép MIT. Xem chi tiết trong file [LICENSE-flappy-bird-assets.txt](LICENSE-flappy-bird-assets.txt).
+Most of the images and sounds come from [flappy-bird-assets](https://github.com/samuelcust/flappy-bird-assets) by Samuel Custodio, under the MIT License. See [LICENSE-flappy-bird-assets.txt](LICENSE-flappy-bird-assets.txt) for details.
 
-Đây là project học tập phi thương mại, không liên quan đến game Flappy Bird gốc hay tác giả của game đó.
+This is a non-commercial learning project and is not affiliated with the original Flappy Bird game or its creator.
