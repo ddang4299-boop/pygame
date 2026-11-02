@@ -16,6 +16,10 @@ RED = (255, 0, 0)
 BLACK = (0, 0, 0)
 YELLOW = (255, 255, 0)
 
+# The browser plays sound on the same thread as the game, so a small buffer crackles.
+if WEB:
+       pygame.mixer.pre_init(buffer=2048)
+
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption('FlappyPie')
@@ -72,14 +76,15 @@ tube3_pass = False
 
 pausing = False
 
-backgroud_image = pygame.image.load("sprites/background.png")
+# convert() / convert_alpha() match the image to the screen format, which makes drawing much faster.
+backgroud_image = pygame.image.load("sprites/background.png").convert()
 backgroud_image = pygame.transform.scale(backgroud_image, (WIDTH, HEIGHT))
-background_night_image = pygame.image.load("sprites/background-night.png")
+background_night_image = pygame.image.load("sprites/background-night.png").convert()
 background_night_image = pygame.transform.scale(background_night_image, (WIDTH, HEIGHT))
 BACKGROUND_SPEED = 1 # slower than the pipes, so the background looks far away
 background_x = 0
 
-base_image = pygame.image.load("sprites/base.png")
+base_image = pygame.image.load("sprites/base.png").convert()
 base_image = pygame.transform.scale(base_image, (700, 83))
 
 # Yellow bird animation: load 3 images into a list, then pick one to draw each frame.
@@ -120,17 +125,17 @@ pipe_red_image = pygame.image.load("sprites/pipe-red.png").convert_alpha()
 pipe_red_image = pygame.transform.scale(pipe_red_image, (TUBE_WIDTH, PIPE_HEIGHT))
 pipe_red_image_top = pygame.transform.flip(pipe_red_image, False, True)
 
-messgage_main = pygame.image.load("sprites/message-nobird.png") # message.png without the grey bird
+messgage_main = pygame.image.load("sprites/message-nobird.png").convert_alpha() # message.png without the grey bird
 messgage_main = pygame.transform.scale(messgage_main, (420, 500))
 
-gameover_txt = pygame.image.load("sprites/gameover.png")
+gameover_txt = pygame.image.load("sprites/gameover.png").convert_alpha()
 gameover_txt = pygame.transform.scale(gameover_txt, (350, 100))
 scoreboard_image = pygame.image.load("sprites/scoreboard.png").convert_alpha()
 
 # Black layer drawn over the game at game over. Alpha: 0 = no change, 255 = fully black.
 DARK_OVERLAY_ALPHA = 130
-dark_overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-dark_overlay.fill((0, 0, 0, DARK_OVERLAY_ALPHA))
+dark_overlay = pygame.Surface((WIDTH, HEIGHT)).convert() # black by default
+dark_overlay.set_alpha(DARK_OVERLAY_ALPHA)
 show_message = True
 
 # sound effect
