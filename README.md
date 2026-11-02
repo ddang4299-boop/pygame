@@ -24,8 +24,8 @@ Make sure to run the game from the folder containing `flappybird.py`, because im
 
 | Action | Result |
 |---|---|
-| Click the mouse | Start the game |
-| Left-click or press Space | Make the bird fly up, or restart after game over |
+| Left-click or press Space | Start the game, or make the bird fly up |
+| Left-click or press Space after game over | Return to the start screen |
 | Click the speaker icon | Turn sound on or off |
 
 ## Credits
