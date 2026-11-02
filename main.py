@@ -1,7 +1,9 @@
 import asyncio
+import base64
 import sys
+import time
 import pygame
-from random import randint  
+from random import randint
 
 # pygbag runs the game in the browser, where sys.platform is "emscripten".
 WEB = sys.platform == "emscripten"
@@ -16,15 +18,12 @@ RED = (255, 0, 0)
 BLACK = (0, 0, 0)
 YELLOW = (255, 255, 0)
 
-# The browser plays sound on the same thread as the game, so a small buffer crackles.
-if WEB:
-       pygame.mixer.pre_init(buffer=2048)
-
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption('FlappyPie')
 running = True 
 clock = pygame.time.Clock()
+MAX_STEP = 3 # the bird never jumps further than 3 frames, even after the page pauses
 
 TUBE_VELOCITY = 4.46
 TUBE_WIDTH = 88
@@ -148,6 +147,62 @@ hit_sound = pygame.mixer.Sound("audio/hit.ogg")
 change_bird_sound = pygame.mixer.Sound("audio/changeBird.ogg")
 SOUND_VOLUME = 0.3 # 0.0 -> 1.0
 all_sounds = [point_sound, wing_sound, swoosh_sound, die_sound, hit_sound, change_bird_sound]
+
+# In the browser, pygame mixes sound on the same thread as the game, so any busy moment
+# makes it crackle. The browser's own audio system plays on a separate thread, so pygame
+# only decodes the sounds here and the browser plays them.
+WEB_AUDIO_SCRIPT = """
+window.gameAudio = {
+       ctx: new (window.AudioContext || window.webkitAudioContext)(),
+       buffers: [],
+       load(base64Text, rate) {
+              const bytes = Uint8Array.from(atob(base64Text), (ch) => ch.charCodeAt(0));
+              const samples = new Int16Array(bytes.buffer);
+              const frames = samples.length / 2;
+              const buffer = this.ctx.createBuffer(2, frames, rate);
+              for (let channel = 0; channel < 2; channel++) {
+                     const data = buffer.getChannelData(channel);
+                     for (let i = 0; i < frames; i++) {
+                            data[i] = samples[i * 2 + channel] / 32768;
+                     }
+              }
+              this.buffers.push(buffer);
+       },
+       play(index, volume) {
+              const source = this.ctx.createBufferSource();
+              const gain = this.ctx.createGain();
+              source.buffer = this.buffers[index];
+              gain.gain.value = volume;
+              source.connect(gain).connect(this.ctx.destination);
+              source.start();
+       },
+};
+// Browsers keep audio paused until the player touches the page.
+for (const type of ["pointerdown", "touchstart", "keydown"]) {
+       document.addEventListener(type, () => window.gameAudio.ctx.resume(), true);
+}
+"""
+
+class WebSound:
+       def __init__(self, sound, index, rate):
+              self.index = index
+              self.volume = 1.0
+              base64_text = base64.b64encode(sound.get_raw()).decode()
+              platform.window.eval(f"gameAudio.load('{base64_text}', {rate})")
+
+       def set_volume(self, volume):
+              self.volume = volume
+
+       def play(self):
+              platform.window.eval(f"gameAudio.play({self.index}, {self.volume})")
+
+if WEB:
+       platform.window.eval(WEB_AUDIO_SCRIPT)
+       rate = pygame.mixer.get_init()[0]
+       all_sounds = [WebSound(sound, index, rate) for index, sound in enumerate(all_sounds)]
+       point_sound, wing_sound, swoosh_sound, die_sound, hit_sound, change_bird_sound = all_sounds
+       pygame.mixer.quit() # pygame's sound is no longer needed
+
 for sound in all_sounds:
        sound.set_volume(SOUND_VOLUME)
 
@@ -205,8 +260,18 @@ async def main():
        global tube1_pass, tube2_pass, tube3_pass
 
        swoosh_sound.play() # play once when the game opens on the main screen
+       step = 1 # how many 1/60 s passed since the last frame; always 1 on desktop
+       last_frame_time = time.perf_counter()
        while running:
-              clock.tick(60) # fps
+              if WEB:
+                     # In the browser, "await asyncio.sleep(0)" already waits for the next screen
+                     # refresh and clock.tick() would freeze the page. Screens refresh at different
+                     # speeds (60 Hz, 165 Hz...), so everything moves by the time that really passed.
+                     now = time.perf_counter()
+                     step = min((now - last_frame_time) * 60, MAX_STEP)
+                     last_frame_time = now
+              else:
+                     clock.tick(60) # fps
               screen.fill(GREEN) # theme
 
               # Scrolling background: draw two copies side by side and move them left.
@@ -216,7 +281,7 @@ async def main():
               screen.blit(current_background, (background_x, 0))
               screen.blit(current_background, (background_x + WIDTH, 0))
               if not pausing: # the background stops at game over
-                     background_x -= BACKGROUND_SPEED
+                     background_x -= BACKGROUND_SPEED * step
                      if background_x <= -WIDTH:
                             background_x = 0
 
@@ -228,8 +293,8 @@ async def main():
                      # The bird stays in place and only flaps. The counter must keep going here,
                      # because the "continue" below skips the counter in the game part of the loop.
                      bird_images_large = bird_skins_large[current_bird]
-                     screen.blit(bird_images_large[bird_frame_count // BIRD_ANIMATION_SPEED % len(bird_images_large)], MAIN_BIRD_RECT)
-                     bird_frame_count += 1
+                     screen.blit(bird_images_large[int(bird_frame_count // BIRD_ANIMATION_SPEED) % len(bird_images_large)], MAIN_BIRD_RECT)
+                     bird_frame_count += step
                      screen.blit(arrow_left_image, arrow_left_rect)
                      screen.blit(arrow_right_image, arrow_right_rect)
 
@@ -275,24 +340,25 @@ async def main():
 
        
               # move tube to the left
-              tube1_x = tube1_x - TUBE_VELOCITY
-              tube2_x = tube2_x - TUBE_VELOCITY
-              tube3_x = tube3_x - TUBE_VELOCITY
+              tube1_x = tube1_x - TUBE_VELOCITY * step
+              tube2_x = tube2_x - TUBE_VELOCITY * step
+              tube3_x = tube3_x - TUBE_VELOCITY * step
 
               # draw bird
               # Divide the frame count by the speed to get the current step, then use % to loop through the image list.
               # Example with speed 6: frames 0-5 -> image 0, frames 6-11 -> image 1, ..., frame 24 goes back to image 0.
               bird_images = bird_skins[current_bird]
-              bird_image = bird_images[bird_frame_count // BIRD_ANIMATION_SPEED % len(bird_images)]
+              bird_image = bird_images[int(bird_frame_count // BIRD_ANIMATION_SPEED) % len(bird_images)]
               bird_rect = screen.blit(bird_image, (BIRD_X, bird_y))
               if not pausing: # the counter stops at game over, so the bird stops flapping
-                     bird_frame_count += 1
+                     bird_frame_count += step
 
               # draw sand
               sand_rect = screen.blit(base_image, (0, 917))
               # bird falls
-              bird_y += bird_drop_velocity
-              bird_drop_velocity += GRAVITY
+              # The second part keeps the jump the same height at any screen speed.
+              bird_y += bird_drop_velocity * step + GRAVITY * step * (step - 1) / 2
+              bird_drop_velocity += GRAVITY * step
 
               # generate new tube
               if tube1_x < -TUBE_WIDTH:
