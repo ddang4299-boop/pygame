@@ -15,10 +15,10 @@ Install [Python 3](https://www.python.org/downloads/) first, then run these comm
 
 ```bash
 pip install pygame
-python flappybird.py
+python main.py
 ```
 
-Make sure to run the game from the folder containing `flappybird.py`, because images and sounds are loaded using relative paths.
+Make sure to run the game from the folder containing `main.py`, because images and sounds are loaded using relative paths.
 
 ## How to play
 
