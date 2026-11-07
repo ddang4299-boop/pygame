@@ -10,7 +10,20 @@ WEB = sys.platform == "emscripten"
 if WEB:
        import platform # pygbag's version, gives access to the browser
 
-WIDTH, HEIGHT = 700, 1000
+WIDTH = 700
+MIN_HEIGHT, MAX_HEIGHT = 1000, 1700 # from a wide screen to a very tall phone
+if WEB:
+       # Match the shape of the player's screen, so the game fills phones of any size.
+       # Wider screens (tablets, computers) get the 1000 px layout with bars at the sides.
+       screen_shape = float(platform.window.innerHeight) / float(platform.window.innerWidth)
+       HEIGHT = int(min(max(WIDTH * screen_shape, MIN_HEIGHT), MAX_HEIGHT))
+else:
+       HEIGHT = 1522 # same shape as an iPhone 16 Pro screen (402 x 874 points)
+BASE_HEIGHT = 83
+GROUND_Y = HEIGHT - BASE_HEIGHT # where the ground starts
+# The game was first made 1000 px tall, with the ground at 917. Everything placed for that
+# size moves down by SHIFT, so it sits in the middle of the taller screen.
+SHIFT = (GROUND_Y - 917) // 2
 
 GREEN = (0, 200, 0) # RGB colour
 BLUE = (0, 0, 255)
@@ -19,7 +32,24 @@ BLACK = (0, 0, 0)
 YELLOW = (255, 255, 0)
 
 pygame.init()
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
+if WEB:
+       screen = pygame.display.set_mode((WIDTH, HEIGHT)) # the browser scales it to fit the page
+       window = screen
+else:
+       # A 1522 px tall window does not fit most computer screens. The game is drawn on
+       # "screen" at full size, then shown smaller in a window that fits.
+       window_height = int(pygame.display.get_desktop_sizes()[0][1] * 0.85)
+       window = pygame.display.set_mode((window_height * WIDTH // HEIGHT, window_height))
+       screen = pygame.Surface((WIDTH, HEIGHT)).convert()
+
+def show_frame():
+       if window is not screen:
+              pygame.transform.smoothscale(screen, window.get_size(), window)
+       pygame.display.flip()
+
+# Mouse positions are in window pixels; this turns them into game pixels.
+def to_game_pos(pos):
+       return (pos[0] * WIDTH // window.get_width(), pos[1] * HEIGHT // window.get_height())
 pygame.display.set_caption('FlappyPie')
 running = True 
 clock = pygame.time.Clock()
@@ -33,12 +63,16 @@ tube1_x = 900
 tube2_x = 1250
 tube3_x = 1600
 
-tube1_height = randint(167, 584)
-tube2_height = randint(167, 584)
-tube3_height = randint(167, 584)  
+# Top of each gap between pipes. The range is as wide as before, so the game is just as hard.
+GAP_TOP_MIN = 167 + SHIFT
+GAP_TOP_MAX = 584 + SHIFT
+tube1_height = randint(GAP_TOP_MIN, GAP_TOP_MAX)
+tube2_height = randint(GAP_TOP_MIN, GAP_TOP_MAX)
+tube3_height = randint(GAP_TOP_MIN, GAP_TOP_MAX)  
 
 BIRD_X = 88
-bird_y = 667
+BIRD_START_Y = 667 + SHIFT
+bird_y = BIRD_START_Y
 BIRD_WIDTH = 55
 BIRD_HEIGHT = 39 
 
@@ -76,19 +110,21 @@ tube3_pass = False
 pausing = False
 
 # convert() / convert_alpha() match the image to the screen format, which makes drawing much faster.
+# Scale the background to the screen height without stretching it, so it ends up wider than the screen.
 backgroud_image = pygame.image.load("sprites/background.png").convert()
-backgroud_image = pygame.transform.scale(backgroud_image, (WIDTH, HEIGHT))
+BACKGROUND_WIDTH = backgroud_image.get_width() * HEIGHT // backgroud_image.get_height()
+backgroud_image = pygame.transform.scale(backgroud_image, (BACKGROUND_WIDTH, HEIGHT))
 background_night_image = pygame.image.load("sprites/background-night.png").convert()
-background_night_image = pygame.transform.scale(background_night_image, (WIDTH, HEIGHT))
+background_night_image = pygame.transform.scale(background_night_image, (BACKGROUND_WIDTH, HEIGHT))
 BACKGROUND_SPEED = 1 # slower than the pipes, so the background looks far away
 background_x = 0
 
 base_image = pygame.image.load("sprites/base.png").convert()
-base_image = pygame.transform.scale(base_image, (700, 83))
+base_image = pygame.transform.scale(base_image, (WIDTH, BASE_HEIGHT))
 
 # Yellow bird animation: load 3 images into a list, then pick one to draw each frame.
 BIRD_ANIMATION_SPEED = 6 # change image every 6 game frames (60 FPS -> 10 images per second)
-MAIN_BIRD_RECT = pygame.Rect(310, 477, 80, 56) # larger bird shown on the main screen
+MAIN_BIRD_RECT = pygame.Rect(310, 477 + SHIFT, 80, 56) # larger bird shown on the main screen
 
 # bird_skins holds one animation (a list of images) per colour.
 # bird_skins_large is the same thing, scaled for the main screen.
@@ -111,17 +147,28 @@ bird_frame_count = 0 # counts elapsed frames, used to work out which image to dr
 current_bird = 0 # index in BIRD_COLORS of the bird the player picked
 
 # arrow buttons to change the bird on the main screen
-arrow_left_rect = pygame.Rect(240, 477, 48, 56)
-arrow_right_rect = pygame.Rect(412, 477, 48, 56)
+arrow_left_rect = pygame.Rect(240, 477 + SHIFT, 48, 56)
+arrow_right_rect = pygame.Rect(412, 477 + SHIFT, 48, 56)
 arrow_left_image = pygame.image.load("sprites/button/arrow_left.png").convert_alpha()
 arrow_right_image = pygame.image.load("sprites/button/arrow_right.png").convert_alpha()
 
-PIPE_HEIGHT = 667
-pipe_image = pygame.image.load("sprites/pipe-green.png").convert_alpha()
-pipe_image = pygame.transform.scale(pipe_image, (TUBE_WIDTH, PIPE_HEIGHT))
+# The pipes must be long enough to reach the top of the screen and the ground from any gap.
+# Stretching the whole image would make the pipe's opening too tall, so the image is drawn at
+# its usual size and its last row (plain pipe body) is repeated to make it longer.
+PIPE_IMAGE_HEIGHT = 667
+PIPE_HEIGHT = GROUND_Y
+def load_pipe(path):
+       image = pygame.image.load(path).convert_alpha()
+       image = pygame.transform.scale(image, (TUBE_WIDTH, PIPE_IMAGE_HEIGHT))
+       pipe = pygame.Surface((TUBE_WIDTH, PIPE_HEIGHT), pygame.SRCALPHA)
+       pipe.blit(image, (0, 0))
+       body_row = image.subsurface((0, PIPE_IMAGE_HEIGHT - 1, TUBE_WIDTH, 1))
+       pipe.blit(pygame.transform.scale(body_row, (TUBE_WIDTH, PIPE_HEIGHT - PIPE_IMAGE_HEIGHT)), (0, PIPE_IMAGE_HEIGHT))
+       return pipe
+
+pipe_image = load_pipe("sprites/pipe-green.png")
 pipe_image_top = pygame.transform.flip(pipe_image, False, True)
-pipe_red_image = pygame.image.load("sprites/pipe-red.png").convert_alpha()
-pipe_red_image = pygame.transform.scale(pipe_red_image, (TUBE_WIDTH, PIPE_HEIGHT))
+pipe_red_image = load_pipe("sprites/pipe-red.png")
 pipe_red_image_top = pygame.transform.flip(pipe_red_image, False, True)
 
 messgage_main = pygame.image.load("sprites/message-nobird.png").convert_alpha() # message.png without the grey bird
@@ -279,16 +326,16 @@ async def main():
               # is then exactly where the first one starts, so the loop is not visible.
               current_background = background_night_image if night_mode else backgroud_image
               screen.blit(current_background, (background_x, 0))
-              screen.blit(current_background, (background_x + WIDTH, 0))
+              screen.blit(current_background, (background_x + BACKGROUND_WIDTH, 0))
               if not pausing: # the background stops at game over
                      background_x -= BACKGROUND_SPEED * step
-                     if background_x <= -WIDTH:
+                     if background_x <= -BACKGROUND_WIDTH:
                             background_x = 0
 
               # draw main 
                      # draw main
               if show_message:
-                     screen.blit(messgage_main, (140, 167))
+                     screen.blit(messgage_main, (140, 167 + SHIFT))
 
                      # The bird stays in place and only flaps. The counter must keep going here,
                      # because the "continue" below skips the counter in the game part of the loop.
@@ -301,21 +348,21 @@ async def main():
                      screen.blit(speaker_on_image if sound_on else speaker_off_image, speaker_rect)
                      # The theme button is only drawn and clickable in this block, so it only exists on the main screen.
                      screen.blit(theme_dark_image if night_mode else theme_light_image, theme_rect)
-                     pygame.display.flip()
+                     show_frame()
                      for event in pygame.event.get():
                             if event.type == pygame.QUIT:
                                    running = False
                             left_click = event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
                             space_key = event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE
-                            if left_click and speaker_rect.collidepoint(event.pos):
+                            if left_click and speaker_rect.collidepoint(to_game_pos(event.pos)):
                                    toggle_sound()
-                            elif left_click and theme_rect.collidepoint(event.pos):
+                            elif left_click and theme_rect.collidepoint(to_game_pos(event.pos)):
                                    night_mode = not night_mode
                             # % wraps around: left of the first bird is the last one, and right of the last is the first.
-                            elif left_click and arrow_left_rect.collidepoint(event.pos):
+                            elif left_click and arrow_left_rect.collidepoint(to_game_pos(event.pos)):
                                    current_bird = (current_bird - 1) % len(BIRD_COLORS)
                                    change_bird_sound.play()
-                            elif left_click and arrow_right_rect.collidepoint(event.pos):
+                            elif left_click and arrow_right_rect.collidepoint(to_game_pos(event.pos)):
                                    current_bird = (current_bird + 1) % len(BIRD_COLORS)
                                    change_bird_sound.play()
                             elif event.type == pygame.MOUSEBUTTONDOWN or space_key:
@@ -354,7 +401,7 @@ async def main():
                      bird_frame_count += step
 
               # draw sand
-              sand_rect = screen.blit(base_image, (0, 917))
+              sand_rect = screen.blit(base_image, (0, GROUND_Y))
               # bird falls
               # The second part keeps the jump the same height at any screen speed.
               bird_y += bird_drop_velocity * step + GRAVITY * step * (step - 1) / 2
@@ -363,15 +410,15 @@ async def main():
               # generate new tube
               if tube1_x < -TUBE_WIDTH:
                      tube1_x = 963
-                     tube1_height =  randint(167, 584)
+                     tube1_height =  randint(GAP_TOP_MIN, GAP_TOP_MAX)
                      tube1_pass = False
               if tube2_x < -TUBE_WIDTH:
                      tube2_x = 963
-                     tube2_height = randint(167, 584)
+                     tube2_height = randint(GAP_TOP_MIN, GAP_TOP_MAX)
                      tube2_pass = False
               if tube3_x < -TUBE_WIDTH:
                      tube3_x = 963
-                     tube3_height = randint(167, 584)
+                     tube3_height = randint(GAP_TOP_MIN, GAP_TOP_MAX)
                      tube3_pass = False
 
               score_str = str(score)
@@ -420,22 +467,22 @@ async def main():
               if pausing:
                      screen.blit(dark_overlay, (0, 0))
                      screen.blit(speaker_on_image if sound_on else speaker_off_image, speaker_rect)
-                     screen.blit(gameover_txt, (175, 200))
-                     screen.blit(scoreboard_image, (90, 330))
-                     draw_small_number(high_score, 582, 382)
-                     draw_small_number(score, 582, 498)
+                     screen.blit(gameover_txt, (175, 200 + SHIFT))
+                     screen.blit(scoreboard_image, (90, 330 + SHIFT))
+                     draw_small_number(high_score, 582, 382 + SHIFT)
+                     draw_small_number(score, 582, 498 + SHIFT)
 
               for event in pygame.event.get(): #click
                      if event.type == pygame.QUIT: # quit
                             running = False
                      left_click = event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
                      space_key = event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE
-                     if left_click and speaker_rect.collidepoint(event.pos):
+                     if left_click and speaker_rect.collidepoint(to_game_pos(event.pos)):
                             toggle_sound()
                      elif left_click or space_key:
                             #reset and back to main
                             if pausing:
-                               bird_y = 667
+                               bird_y = BIRD_START_Y
                                TUBE_VELOCITY = 4.46
                                tube1_x = 900
                                tube2_x = 1250
@@ -453,7 +500,7 @@ async def main():
                                bird_drop_velocity -= 11.33
                                # sound wing
                                wing_sound.play()
-              pygame.display.flip()
+              show_frame()
               await asyncio.sleep(0) # give control back to the browser
 
        pygame.quit()
